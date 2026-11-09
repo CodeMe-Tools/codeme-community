@@ -1,0 +1,35 @@
+<toolSet name="Codeme">
+  <tool name="Codeme Syntax Check" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="true" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="codeme-syntax" />
+      <option name="PARAMETERS" value="run --file $FilePath$" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+    <filter>
+      <option name="NAME" value="Codeme Diagnostics" />
+      <option name="DESCRIPTION" value="Match Codeme CDM diagnostic outputs" />
+      <option name="REGEXP" value="\[(CDM-[A-Z0-9-]+)\] $FilePath$:$Line$:$Column$: $Message$" />
+    </filter>
+  </tool>
+  <tool name="Codeme Syntax Fix" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="true" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="codeme-syntax" />
+      <option name="PARAMETERS" value="run --file $FilePath$ --fix" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="Codeme Quality Check" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="true" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="codeme-quality" />
+      <option name="PARAMETERS" value="run --repo $ProjectFileDir$" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="Codeme Deterministic Fix Loop" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="false" showConsoleOnStdErr="true" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="codeme-skills" />
+      <option name="PARAMETERS" value="fix-loop --repo $ProjectFileDir$" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+</toolSet>

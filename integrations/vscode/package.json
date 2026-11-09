@@ -1,0 +1,98 @@
+{
+  "name": "codeme-vscode",
+  "displayName": "Codeme Code Quality & Verification",
+  "description": "Thin-client VS Code and VS Code Insiders integration for Codeme deterministic verification engines",
+  "version": "1.0.0",
+  "publisher": "codeme-tools",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Linters", "Formatters", "Programming Languages"],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:swift"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeme.syntax.check",
+        "title": "Codeme: Check Syntax"
+      },
+      {
+        "command": "codeme.syntax.fix",
+        "title": "Codeme: Deterministic Syntax Fix"
+      },
+      {
+        "command": "codeme.quality.check",
+        "title": "Codeme: Check Quality & Architecture"
+      },
+      {
+        "command": "codeme.quality.fix",
+        "title": "Codeme: Clean Quality Fix"
+      },
+      {
+        "command": "codeme.fixLoop",
+        "title": "Codeme: Run Deterministic Fix Loop"
+      },
+      {
+        "command": "codeme.verify.run",
+        "title": "Codeme: Run Verification Engine"
+      },
+      {
+        "command": "codeme.invariant.check",
+        "title": "Codeme: Check Invariants"
+      }
+    ],
+    "configuration": {
+      "title": "Codeme",
+      "properties": {
+        "codeme.executablePath": {
+          "type": "string",
+          "default": "codeme-toolchain",
+          "description": "Path to the codeme-toolchain or engine binaries."
+        },
+        "codeme.autoFixOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run deterministic syntax and quality repairs on file save."
+        },
+        "codeme.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Populate VS Code Problems panel with Codeme CDM diagnostics."
+        }
+      }
+    },
+    "problemMatchers": [
+      {
+        "name": "codeme-syntax",
+        "owner": "codeme",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^\\[(CDM-[A-Z0-9-]+)\\] (.*):(\\d+):(\\d+): (.*)$",
+          "code": 1,
+          "file": 2,
+          "line": 3,
+          "column": 4,
+          "message": 5
+        }
+      },
+      {
+        "name": "codeme-quality",
+        "owner": "codeme",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^\\[(CDM-[A-Z0-9-]+)\\] (.*):(\\d+):(\\d+): (.*)$",
+          "code": 1,
+          "file": 2,
+          "line": 3,
+          "column": 4,
+          "message": 5
+        }
+      }
+    ]
+  }
+}

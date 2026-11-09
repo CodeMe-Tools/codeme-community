@@ -1,0 +1,30 @@
+[
+  {
+    "label": "Codeme: Verify Current File",
+    "command": "codeme-syntax",
+    "args": ["run", "--file", "$ZED_FILE"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Codeme: Repair Current File",
+    "command": "codeme-syntax",
+    "args": ["run", "--file", "$ZED_FILE", "--fix"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Codeme: Quality Gate",
+    "command": "codeme-quality",
+    "args": ["run", "--repo", "$ZED_WORKTREE_ROOT"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Codeme: Fix Loop",
+    "command": "codeme-skills",
+    "args": ["fix-loop", "--repo", "$ZED_WORKTREE_ROOT"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  }
+]

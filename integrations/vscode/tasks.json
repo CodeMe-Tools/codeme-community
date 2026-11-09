@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Codeme: Verify Syntax (Active File)",
+      "type": "shell",
+      "command": "codeme-syntax",
+      "args": ["run", "--file", "${file}"],
+      "group": "build",
+      "problemMatcher": ["$codeme-syntax"],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "Codeme: Repair Syntax (Active File)",
+      "type": "shell",
+      "command": "codeme-syntax",
+      "args": ["run", "--file", "${file}", "--fix"],
+      "group": "build",
+      "problemMatcher": ["$codeme-syntax"]
+    },
+    {
+      "label": "Codeme: Quality & Architecture Check",
+      "type": "shell",
+      "command": "codeme-quality",
+      "args": ["run", "--repo", "${workspaceFolder}"],
+      "group": "test",
+      "problemMatcher": ["$codeme-quality"]
+    },
+    {
+      "label": "Codeme: Quality Clean Fix",
+      "type": "shell",
+      "command": "codeme-quality",
+      "args": ["run", "--repo", "${workspaceFolder}", "--fix"],
+      "group": "test"
+    },
+    {
+      "label": "Codeme: Verify Builds and Tests",
+      "type": "shell",
+      "command": "codeme-verify",
+      "args": ["run", "--repo", "${workspaceFolder}"],
+      "group": "test"
+    },
+    {
+      "label": "Codeme: Invariant Verification",
+      "type": "shell",
+      "command": "codeme-invariant",
+      "args": ["run", "--repo", "${workspaceFolder}", "--class", "all"],
+      "group": "test"
+    },
+    {
+      "label": "Codeme: Run Deterministic Fix Loop",
+      "type": "shell",
+      "command": "codeme-skills",
+      "args": ["fix-loop", "--repo", "${workspaceFolder}"],
+      "group": "build"
+    }
+  ]
+}
