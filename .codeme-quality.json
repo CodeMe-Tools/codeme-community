@@ -1,0 +1,29 @@
+{
+  "max_cyclomatic_complexity": 10,
+  "max_nesting_depth": 4,
+  "max_file_lines": 500,
+  "max_function_lines": 50,
+  "architecture": {
+    "rules": [
+      {
+        "layer_name": "Domain Layer",
+        "path_patterns": [
+          "domain/",
+          "models/",
+          "src/domain/",
+          "src/models/"
+        ],
+        "forbidden_imports": [
+          "infrastructure",
+          "db",
+          "http",
+          "api"
+        ]
+      }
+    ]
+  },
+  "clean_code": {
+    "unused_imports": true,
+    "trailing_whitespace": true
+  }
+}

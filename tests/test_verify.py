@@ -1,0 +1,165 @@
+"""Tests for codeme-verify: Multi-ecosystem discovery, test execution, diagnostics, and repairs."""
+
+import io
+from pathlib import Path
+import subprocess
+import sys
+from unittest.mock import patch
+
+import pytest
+
+from codeme.verify.cli import main, run_verification, parse_args
+from codeme.verify.diagnostics import VerifyDiagnostic, format_diagnostics_json
+from codeme.verify.discovery import DiscoveredProject, ProjectDiscovery
+from codeme.verify.repair import MechanicalRepair
+from codeme.verify.runner import TestRunner
+
+
+def test_discovery_python_pytest(tmp_path):
+    """Discovery identifies Python pytest project by pyproject.toml."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[tool.pytest.ini_options]\naddopts = '-q'\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_sample.py").write_text("def test_ok(): pass\n", encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover()
+
+    assert proj is not None
+    assert proj.ecosystem == "python"
+    assert proj.framework == "pytest"
+    assert "pytest" in proj.command[-1] or "pytest" in proj.command[-2]
+
+
+def test_discovery_python_unittest(tmp_path):
+    """Discovery identifies Python project without pytest configuration as unittest."""
+    setup_py = tmp_path / "setup.py"
+    setup_py.write_text("from setuptools import setup; setup(name='test')\n", encoding="utf-8")
+    test_file = tmp_path / "test_example.py"
+    test_file.write_text("import unittest\nclass T(unittest.TestCase): pass\n", encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover()
+
+    assert proj is not None
+    assert proj.ecosystem == "python"
+
+
+def test_discovery_node_vitest_and_jest(tmp_path):
+    """Discovery identifies Node.js projects with vitest or jest."""
+    pkg_json = tmp_path / "package.json"
+    pkg_json.write_text('{"devDependencies": {"vitest": "^1.0.0"}}', encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover()
+
+    assert proj is not None
+    assert proj.ecosystem == "node"
+    assert proj.framework == "vitest"
+    assert "vitest" in proj.command
+
+    # Switch to jest
+    pkg_json.write_text('{"devDependencies": {"jest": "^29.0.0"}}', encoding="utf-8")
+    proj_jest = discovery.discover()
+    assert proj_jest is not None
+    assert proj_jest.framework == "jest"
+    assert "jest" in proj_jest.command
+
+
+def test_discovery_swift(tmp_path):
+    """Discovery identifies Swift projects by Package.swift."""
+    pkg_swift = tmp_path / "Package.swift"
+    pkg_swift.write_text('// swift-tools-version:5.5\nimport PackageDescription\n', encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover(test_pattern="MyTest")
+
+    assert proj is not None
+    assert proj.ecosystem == "swift"
+    assert proj.command == ["swift", "test", "--filter", "MyTest"]
+
+
+def test_runner_passing_test_suite_silent(tmp_path, capsys):
+    """Passing test suite exits 0 with zero bytes on stdout and stderr (ADR-0002)."""
+    # Create valid python test project
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname='dummy'\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_pass.py").write_text("def test_ok(): assert 1 == 1\n", encoding="utf-8")
+
+    args = parse_args(["run", "--repo", str(tmp_path)])
+    exit_code = run_verification(args)
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_runner_failing_test_suite_diagnostics(tmp_path, capsys):
+    """Failing test suite exits non-zero with actionable CDM-VRF diagnostics."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname='dummy'\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_fail.py").write_text("def test_assert(): assert 1 == 2\n", encoding="utf-8")
+
+    args = parse_args(["run", "--repo", str(tmp_path)])
+    exit_code = run_verification(args)
+
+    assert exit_code != 0
+    captured = capsys.readouterr()
+    assert "CDM-VRF-" in captured.err
+    assert "Remediation:" in captured.err
+
+
+def test_mechanical_repair_missing_import(tmp_path, capsys):
+    """Mechanical repair detects missing import, injects it, and verifies test pass."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname='dummy'\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    
+    # Missing 'pytest' or 'os' import causing NameError
+    test_code = (
+        "def test_needs_os():\n"
+        "    assert os.path.exists('.')\n"
+    )
+    (tests_dir / "test_repair.py").write_text(test_code, encoding="utf-8")
+
+    # Run with --fix
+    args = parse_args(["run", "--repo", str(tmp_path), "--fix"])
+    exit_code = run_verification(args)
+
+    assert exit_code == 0
+    # Verified: import os was inserted and test passed!
+    content = (tests_dir / "test_repair.py").read_text(encoding="utf-8")
+    assert "import os" in content
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_mechanical_repair_missing_fixture(tmp_path):
+    """Mechanical repair creates stub for missing pytest fixture and verifies pass."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname='dummy'\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+
+    test_code = (
+        "def test_with_custom_fixture(mock_db):\n"
+        "    assert mock_db is None\n"
+    )
+    (tests_dir / "test_fixture.py").write_text(test_code, encoding="utf-8")
+
+    args = parse_args(["run", "--repo", str(tmp_path), "--fix"])
+    exit_code = run_verification(args)
+
+    assert exit_code == 0
+    conftest = tests_dir / "conftest.py"
+    assert conftest.exists()
+    assert "def mock_db()" in conftest.read_text(encoding="utf-8")

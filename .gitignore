@@ -13,3 +13,4 @@ node_modules/
 htmlcov/
 *.sqlite3
 *.db
+.pytest_cache/

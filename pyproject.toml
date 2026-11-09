@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeme-community"
+version = "0.1.0"
+description = "Deterministic open-source verification, linting, syntax repair, and quality gate core"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "Codeme Open Source Maintainers", email = "oss@codeme.io"}
+]
+dependencies = []
+
+[project.scripts]
+codeme-syntax = "codeme.syntax.cli:main"
+codeme-quality = "codeme.quality.cli:main"
+codeme-verify = "codeme.verify.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
