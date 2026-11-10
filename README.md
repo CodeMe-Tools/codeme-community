@@ -1,13 +1,27 @@
+<div align="center">
+
+<a href="https://github.com/CodeMe-Tools">
+  <img src="https://raw.githubusercontent.com/CodeMe-Tools/.github/main/profile/assets/codeme-logo.svg" alt="CodeMe Logo" width="80" height="80" />
+</a>
+
 # codeme-community
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#)
-[![Visibility](https://img.shields.io/badge/Visibility-PUBLIC-green.svg)](#)
-[![Deterministic](https://img.shields.io/badge/Deterministic-Zero--Byte%20Success-brightgreen.svg)](#)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square)](#)
+[![Visibility](https://img.shields.io/badge/Visibility-PUBLIC-brightgreen.svg?style=flat-square)](#)
+[![Deterministic](https://img.shields.io/badge/Deterministic-Zero--Byte%20Success-0ea5e9.svg?style=flat-square)](#)
 
 > **Deterministic open-source verification, linting, syntax repair, and build verification core**
 
+<p>
+  <a href="https://github.com/CodeMe-Tools"><b>CodeMe Ecosystem</b></a> &bull;
+  <a href="https://github.com/CodeMe-Tools/codeme-docs"><b>Documentation</b></a> &bull;
+  <a href="https://codeme.tools"><b>Official Website</b></a>
+</p>
+
 ---
+
+</div>
 
 ## Overview
 
