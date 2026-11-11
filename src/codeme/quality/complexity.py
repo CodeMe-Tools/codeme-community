@@ -2,8 +2,32 @@
 
 import ast
 from dataclasses import dataclass
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 from codeme.quality.diagnostic import QualityDiagnostic, build_snippet
+from codeme.syntax.treesitter_parser import TreeSitterParser, EXT_TO_LANG
+
+TS_BRANCH_NODES = {
+    "if_expression", "if_statement", "while_expression", "while_statement",
+    "for_expression", "for_statement", "for_range_loop", "loop_expression",
+    "do_statement", "enhanced_for_statement", "match_arm", "case_statement",
+    "expression_case_clause", "type_case_clause", "communication_case_clause",
+    "when_entry", "catch_clause", "catch_block", "rescue", "unless", "until"
+}
+
+TS_COMPOUND_NODES = {
+    "if_expression", "if_statement", "while_expression", "while_statement",
+    "for_expression", "for_statement", "for_range_loop", "loop_expression",
+    "do_statement", "match_expression", "switch_statement", "when_expression",
+    "try_statement", "catch_clause", "catch_block", "rescue", "unless", "until"
+}
+
+TS_BOOL_OPS = {b"&&", b"||", b"and", b"or"}
+
+TS_FUNCTION_TYPES = {
+    "function_item", "function_declaration", "method_declaration",
+    "function_definition", "method", "singleton_method", "constructor_declaration"
+}
 
 
 @dataclass
@@ -95,31 +119,135 @@ def compute_nesting_depth(node: ast.AST) -> int:
     return max_depth
 
 
-def analyze_functions(source: str, file_path: str = "<unknown>") -> List[FunctionMetrics]:
-    """Analyzes all functions and methods in Python source for complexity and nesting."""
+def _extract_ts_ident(node) -> Optional[str]:
+    """Recursively search for identifier name in declarator node."""
+    if node is None:
+        return None
+    if node.type in ("identifier", "name", "field_identifier"):
+        return node.text.decode("utf-8")
+    for child in node.children:
+        found = _extract_ts_ident(child)
+        if found:
+            return found
+    return None
+
+
+def analyze_treesitter_functions(
+    source: str,
+    file_path: str = "<unknown>",
+    ext: Optional[str] = None
+) -> List[FunctionMetrics]:
+    """Analyzes polyglot functions (Rust, Go, C++, Java, Kotlin, Ruby) via Tree-sitter CST."""
     metrics: List[FunctionMetrics] = []
-    try:
-        tree = ast.parse(source, filename=file_path)
-    except SyntaxError:
+    if ext is None:
+        ext = Path(file_path).suffix.lower()
+
+    lang_key = EXT_TO_LANG.get(ext.lower())
+    if not lang_key:
         return metrics
 
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            visitor = ComplexityVisitor()
-            # Visit body of the function (ignoring nested functions when computing this function's direct complexity)
-            for child in node.body:
-                visitor.visit(child)
+    try:
+        ts_parser = TreeSitterParser()
+        parser, _ = ts_parser._get_parser_and_config(lang_key)
+        tree = parser.parse(source.encode("utf-8"))
+    except Exception:
+        return metrics
 
-            nesting = compute_nesting_depth(node)
+    def walk_tree(node):
+        if node.type in TS_FUNCTION_TYPES:
+            # Extract function name
+            name = None
+            name_node = node.child_by_field_name("name") or node.child_by_field_name("declarator")
+            if name_node:
+                name = _extract_ts_ident(name_node)
+            if not name:
+                name = f"func_line_{node.start_point.row + 1}"
+
+            # Calculate cyclomatic complexity inside function
+            complexity = 1
+            def walk_comp(child):
+                nonlocal complexity
+                if child.type in TS_BRANCH_NODES:
+                    complexity += 1
+                elif child.type == "binary_expression":
+                    for op_child in child.children:
+                        if op_child.text in TS_BOOL_OPS:
+                            complexity += 1
+                # Do not recurse into nested function definitions
+                for c in child.children:
+                    if c.type not in TS_FUNCTION_TYPES:
+                        walk_comp(c)
+
+            body_node = node.child_by_field_name("body")
+            if body_node:
+                for c in body_node.children:
+                    walk_comp(c)
+
+            # Calculate nesting depth
+            max_depth = 1
+            def walk_nest(child, depth):
+                nonlocal max_depth
+                max_depth = max(max_depth, depth)
+                for c in child.children:
+                    if c.type not in TS_FUNCTION_TYPES:
+                        new_depth = depth + 1 if c.type in TS_COMPOUND_NODES else depth
+                        walk_nest(c, new_depth)
+
+            if body_node:
+                walk_nest(body_node, 1)
+
             metrics.append(FunctionMetrics(
-                name=node.name,
-                line=node.lineno,
-                col=node.col_offset + 1,
-                complexity=visitor.complexity,
-                nesting_depth=nesting,
+                name=name,
+                line=node.start_point.row + 1,
+                col=node.start_point.column + 1,
+                complexity=complexity,
+                nesting_depth=max_depth,
             ))
 
+        for child in node.children:
+            walk_tree(child)
+
+    walk_tree(tree.root_node)
     return metrics
+
+
+def analyze_functions(
+    source: str,
+    file_path: str = "<unknown>",
+    ext: Optional[str] = None
+) -> List[FunctionMetrics]:
+    """Analyzes all functions and methods for complexity and nesting."""
+    if ext is None:
+        ext = Path(file_path).suffix.lower()
+
+    if ext == ".py":
+        metrics: List[FunctionMetrics] = []
+        try:
+            tree = ast.parse(source, filename=file_path)
+        except SyntaxError:
+            return metrics
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visitor = ComplexityVisitor()
+                # Visit body of the function (ignoring nested functions when computing this function's direct complexity)
+                for child in node.body:
+                    visitor.visit(child)
+
+                nesting = compute_nesting_depth(node)
+                metrics.append(FunctionMetrics(
+                    name=node.name,
+                    line=node.lineno,
+                    col=node.col_offset + 1,
+                    complexity=visitor.complexity,
+                    nesting_depth=nesting,
+                ))
+
+        return metrics
+    elif ext in EXT_TO_LANG:
+        return analyze_treesitter_functions(source, file_path=file_path, ext=ext)
+
+    return []
 
 
 def check_complexity(

@@ -206,3 +206,79 @@ class TestQualityVerification:
         assert code == 1
         assert "CDM-QLT-002" in stderr
         assert "max allowed 2" in stderr
+
+    def test_polyglot_rust_complexity_and_nesting(self, tmp_path, monkeypatch, capsys):
+        """Polyglot Tree-sitter quality check analyzes Rust functions for complexity and nesting."""
+        rs_file = tmp_path / "handler.rs"
+        # Deeply nested and branching Rust function
+        code_rs = (
+            "fn handle_requests(x: i32, y: i32) -> i32 {\n"
+            "    if x > 0 {\n"
+            "        if y > 0 {\n"
+            "            for i in 0..10 {\n"
+            "                if i % 2 == 0 {\n"
+            "                    while x < 100 {\n"
+            "                        return x + 1;\n"
+            "                    }\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    0\n"
+            "}\n"
+        )
+        rs_file.write_text(code_rs, encoding="utf-8")
+
+        code, stdout, stderr = run_quality_cli(["run", "--file", str(rs_file)], monkeypatch, capsys)
+        assert code == 1
+        assert stdout == ""
+        assert "CDM-QLT-002" in stderr
+        assert "handle_requests" in stderr
+        assert "Nesting depth" in stderr
+
+    def test_polyglot_go_clean_and_complex(self, tmp_path, monkeypatch, capsys):
+        """Polyglot Tree-sitter quality check verifies clean Go code and flags complex Go functions."""
+        # 1. Clean Go file
+        clean_go = tmp_path / "clean.go"
+        clean_go.write_text("package main\n\nfunc Add(a, b int) int {\n    return a + b\n}\n", encoding="utf-8")
+        code, stdout, stderr = run_quality_cli(["run", "--file", str(clean_go)], monkeypatch, capsys)
+        assert code == 0
+        assert stdout == ""
+        assert stderr == ""
+
+        # 2. Complex Go function with > 10 decision points
+        complex_go = tmp_path / "complex.go"
+        branches = "\n".join([f"    if x == {i} {{\n        return {i}\n    }}" for i in range(12)])
+        complex_go.write_text(f"package main\n\nfunc Route(x int) int {{\n{branches}\n    return -1\n}}\n", encoding="utf-8")
+        code2, stdout2, stderr2 = run_quality_cli(["run", "--file", str(complex_go)], monkeypatch, capsys)
+        assert code2 == 1
+        assert stdout2 == ""
+        assert "CDM-QLT-001" in stderr2
+        assert "Route" in stderr2
+
+    def test_polyglot_cpp_nesting_violation(self, tmp_path, monkeypatch, capsys):
+        """Polyglot Tree-sitter quality check detects excessive nesting depth in C++ functions."""
+        cpp_file = tmp_path / "algorithm.cpp"
+        code_cpp = (
+            "int evaluate(int a, int b, int c, int d, int e) {\n"
+            "    if (a) {\n"
+            "        if (b) {\n"
+            "            while (c) {\n"
+            "                for (int i = 0; i < d; ++i) {\n"
+            "                    if (e) {\n"
+            "                        return 1;\n"
+            "                    }\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        cpp_file.write_text(code_cpp, encoding="utf-8")
+
+        code, stdout, stderr = run_quality_cli(["run", "--file", str(cpp_file)], monkeypatch, capsys)
+        assert code == 1
+        assert stdout == ""
+        assert "CDM-QLT-002" in stderr
+        assert "evaluate" in stderr

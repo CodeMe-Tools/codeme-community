@@ -16,9 +16,11 @@ from codeme.quality.clean_code import (
     check_trailing_whitespace,
     fix_trailing_whitespace,
 )
+from codeme.syntax.treesitter_parser import EXT_TO_LANG
 
 PYTHON_EXTS = {".py"}
-SUPPORTED_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".swift", ".json", ".md"}
+TREESITTER_EXTS = set(EXT_TO_LANG.keys())
+SUPPORTED_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".swift", ".json", ".md"} | TREESITTER_EXTS
 
 EXCLUDE_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv",
@@ -118,9 +120,8 @@ class QualityRunner:
             max_function_lines=self.config.max_function_lines,
         ))
 
-        # Python-specific checks
-        if file_path.suffix == ".py":
-            # 3. Complexity & nesting
+        # 3. Complexity & nesting (Python + Polyglot Tree-sitter)
+        if file_path.suffix == ".py" or file_path.suffix in TREESITTER_EXTS:
             diagnostics.extend(check_complexity(
                 source,
                 str_path,
@@ -128,6 +129,8 @@ class QualityRunner:
                 max_nesting_depth=self.config.max_nesting_depth,
             ))
 
+        # Python-specific checks
+        if file_path.suffix == ".py":
             # 4. Architecture / DDD boundary rules
             diagnostics.extend(check_architecture_rules(
                 source,
