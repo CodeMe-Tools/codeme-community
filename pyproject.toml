@@ -12,7 +12,15 @@ license = "Apache-2.0"
 authors = [
     {name = "Codeme Open Source Maintainers", email = "oss@codeme.io"}
 ]
-dependencies = []
+dependencies = [
+    "tree-sitter>=0.22.0",
+    "tree-sitter-rust>=0.21.0",
+    "tree-sitter-go>=0.21.0",
+    "tree-sitter-cpp>=0.22.0",
+    "tree-sitter-java>=0.21.0",
+    "tree-sitter-kotlin>=1.0.0",
+    "tree-sitter-ruby>=0.21.0",
+]
 
 [project.scripts]
 codeme-syntax = "codeme.syntax.cli:main"

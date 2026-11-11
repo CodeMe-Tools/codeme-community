@@ -9,11 +9,20 @@ from codeme.syntax.diagnostic import SyntaxDiagnostic
 from codeme.syntax.python_parser import PythonParser
 from codeme.syntax.js_parser import JSParser
 from codeme.syntax.swift_parser import SwiftParser
+from codeme.syntax.treesitter_parser import TreeSitterParser
 
 PYTHON_EXTS = {".py"}
 JS_EXTS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 SWIFT_EXTS = {".swift"}
-SUPPORTED_EXTS = PYTHON_EXTS | JS_EXTS | SWIFT_EXTS
+RUST_EXTS = {".rs"}
+GO_EXTS = {".go"}
+CPP_EXTS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
+JAVA_EXTS = {".java"}
+KOTLIN_EXTS = {".kt", ".kts"}
+RUBY_EXTS = {".rb"}
+TREESITTER_EXTS = RUST_EXTS | GO_EXTS | CPP_EXTS | JAVA_EXTS | KOTLIN_EXTS | RUBY_EXTS
+
+SUPPORTED_EXTS = PYTHON_EXTS | JS_EXTS | SWIFT_EXTS | TREESITTER_EXTS
 
 EXCLUDE_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv",
@@ -30,6 +39,7 @@ class SyntaxRunner:
         self.py_parser = PythonParser()
         self.js_parser = JSParser()
         self.swift_parser = SwiftParser()
+        self.ts_parser = TreeSitterParser()
 
     def discover_files(self, target_path: Path) -> List[Path]:
         """Finds all supported source files, ignoring ignored directories."""
@@ -68,15 +78,24 @@ class SyntaxRunner:
         str_path = str(file_path)
         if ext in PYTHON_EXTS:
             parser = self.py_parser
+            is_ts = False
         elif ext in JS_EXTS:
             parser = self.js_parser
+            is_ts = False
         elif ext in SWIFT_EXTS:
             parser = self.swift_parser
+            is_ts = False
+        elif ext in TREESITTER_EXTS:
+            parser = self.ts_parser
+            is_ts = True
         else:
             return None
 
         if self.fix:
-            repaired, new_source, diag = parser.repair(source, file_path=str_path)
+            if is_ts:
+                repaired, new_source, diag = parser.repair(source, file_path=str_path, ext=ext)
+            else:
+                repaired, new_source, diag = parser.repair(source, file_path=str_path)
             if repaired:
                 try:
                     with open(file_path, "w", encoding="utf-8") as f:
@@ -93,7 +112,10 @@ class SyntaxRunner:
                     )
             return diag
         else:
-            return parser.parse(source, file_path=str_path)
+            if is_ts:
+                return parser.parse(source, file_path=str_path, ext=ext)
+            else:
+                return parser.parse(source, file_path=str_path)
 
     def run(self, repo_path: Optional[str] = None, file_path: Optional[str] = None) -> int:
         """Executes verification over target path or file.
