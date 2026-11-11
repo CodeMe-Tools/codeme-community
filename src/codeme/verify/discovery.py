@@ -29,17 +29,93 @@ class ProjectDiscovery:
         if swift_proj:
             return swift_proj
 
-        # 2. Node / TypeScript
+        # 2. Rust (Cargo)
+        rust_proj = self._discover_cargo(test_pattern)
+        if rust_proj:
+            return rust_proj
+
+        # 3. Go (go test)
+        go_proj = self._discover_go(test_pattern)
+        if go_proj:
+            return go_proj
+
+        # 4. C/C++ (CMake / CTest)
+        cmake_proj = self._discover_cmake(test_pattern)
+        if cmake_proj:
+            return cmake_proj
+
+        # 5. Node / TypeScript
         node_proj = self._discover_node(test_pattern)
         if node_proj:
             return node_proj
 
-        # 3. Python
+        # 6. Python
         python_proj = self._discover_python(test_pattern)
         if python_proj:
             return python_proj
 
         return None
+
+    def _discover_cargo(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers Rust project via Cargo.toml."""
+        cargo_toml = self.repo_dir / "Cargo.toml"
+        if not cargo_toml.is_file():
+            return None
+
+        test_files = list(self.repo_dir.glob("tests/**/*.rs")) + list(self.repo_dir.glob("src/**/*.rs"))
+        cmd = ["cargo", "test"]
+        if test_pattern:
+            cmd.extend(["--", test_pattern])
+
+        return DiscoveredProject(
+            ecosystem="rust",
+            framework="cargo",
+            command=cmd,
+            root_dir=self.repo_dir,
+            test_files=test_files,
+        )
+
+    def _discover_go(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers Go project via go.mod."""
+        go_mod = self.repo_dir / "go.mod"
+        if not go_mod.is_file():
+            return None
+
+        test_files = [f for f in self.repo_dir.glob("**/*_test.go") if "vendor" not in f.parts]
+        cmd = ["go", "test", "-v", "./..."]
+        if test_pattern:
+            cmd.extend(["-run", test_pattern])
+
+        return DiscoveredProject(
+            ecosystem="go",
+            framework="go",
+            command=cmd,
+            root_dir=self.repo_dir,
+            test_files=test_files,
+        )
+
+    def _discover_cmake(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers C/C++ project via CMakeLists.txt or Makefile."""
+        has_cmake = (self.repo_dir / "CMakeLists.txt").is_file()
+        has_makefile = (self.repo_dir / "Makefile").is_file()
+        if not (has_cmake or has_makefile):
+            return None
+
+        test_files: List[Path] = []
+        for pat in ("**/*test*.cpp", "**/*test*.cc", "**/*Test*.cpp", "**/*test*.c"):
+            test_files.extend(self.repo_dir.glob(pat))
+
+        cmd = ["ctest", "--output-on-failure"]
+        if test_pattern:
+            cmd.extend(["-R", test_pattern])
+
+        return DiscoveredProject(
+            ecosystem="cpp",
+            framework="ctest",
+            command=cmd,
+            root_dir=self.repo_dir,
+            test_files=[f for f in test_files if "build" not in f.parts],
+        )
 
     def _discover_swift(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
         package_swift = self.repo_dir / "Package.swift"

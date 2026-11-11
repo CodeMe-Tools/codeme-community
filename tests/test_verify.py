@@ -80,6 +80,53 @@ def test_discovery_swift(tmp_path):
     assert proj.command == ["swift", "test", "--filter", "MyTest"]
 
 
+def test_discovery_rust_cargo(tmp_path):
+    """Discovery identifies Rust projects via Cargo.toml."""
+    cargo = tmp_path / "Cargo.toml"
+    cargo.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_main.rs").write_text("#[test]\nfn test_ok() {}\n", encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover(test_pattern="test_ok")
+
+    assert proj is not None
+    assert proj.ecosystem == "rust"
+    assert proj.framework == "cargo"
+    assert proj.command == ["cargo", "test", "--", "test_ok"]
+
+
+def test_discovery_go(tmp_path):
+    """Discovery identifies Go projects via go.mod."""
+    go_mod = tmp_path / "go.mod"
+    go_mod.write_text("module example.com/demo\n\ngo 1.21\n", encoding="utf-8")
+    (tmp_path / "app_test.go").write_text("package main\nimport \"testing\"\nfunc TestX(t *testing.T){}\n", encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover(test_pattern="TestX")
+
+    assert proj is not None
+    assert proj.ecosystem == "go"
+    assert proj.framework == "go"
+    assert proj.command == ["go", "test", "-v", "./...", "-run", "TestX"]
+
+
+def test_discovery_cmake_ctest(tmp_path):
+    """Discovery identifies C/C++ projects via CMakeLists.txt."""
+    cmake = tmp_path / "CMakeLists.txt"
+    cmake.write_text("cmake_minimum_required(VERSION 3.20)\nproject(demo)\nenable_testing()\n", encoding="utf-8")
+    (tmp_path / "test_runner.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+
+    discovery = ProjectDiscovery(tmp_path)
+    proj = discovery.discover(test_pattern="unit_tests")
+
+    assert proj is not None
+    assert proj.ecosystem == "cpp"
+    assert proj.framework == "ctest"
+    assert proj.command == ["ctest", "--output-on-failure", "-R", "unit_tests"]
+
+
 def test_runner_passing_test_suite_silent(tmp_path, capsys):
     """Passing test suite exits 0 with zero bytes on stdout and stderr (ADR-0002)."""
     # Create valid python test project
