@@ -210,3 +210,125 @@ def test_mechanical_repair_missing_fixture(tmp_path):
     conftest = tests_dir / "conftest.py"
     assert conftest.exists()
     assert "def mock_db()" in conftest.read_text(encoding="utf-8")
+
+
+def test_parse_rust_output(tmp_path):
+    """TestRunner parses rustc compile errors and cargo test panics into structured diagnostics."""
+    runner = TestRunner(tmp_path)
+
+    # 1. Compiler error
+    rust_err = (
+        "error[E0425]: cannot find value `foo` in this scope\n"
+        "  --> tests/test_main.rs:12:5\n"
+        "   |\n"
+        "12 |     foo();\n"
+        "   |     ^^^ not found in this scope\n"
+    )
+    diags = runner._parse_rust_output(rust_err)
+    assert len(diags) == 1
+    assert diags[0].code == "E0425"
+    assert diags[0].file == "tests/test_main.rs"
+    assert diags[0].line == 12
+    assert diags[0].column == 5
+    assert "cannot find value `foo`" in diags[0].message
+
+    # 2. Panic failure
+    panic_err = "failures:\n---- test_add stdout ----\nthread 'test_add' panicked at tests/test_main.rs:8:5: assertion `left == right` failed"
+    diags2 = runner._parse_rust_output(panic_err)
+    assert len(diags2) == 1
+    assert diags2[0].code == "CDM-VRF-001"
+    assert diags2[0].file == "tests/test_main.rs"
+    assert diags2[0].line == 8
+    assert "test_add" in diags2[0].message
+
+
+def test_parse_go_output(tmp_path):
+    """TestRunner parses Go compiler/vet and test failures into structured diagnostics."""
+    runner = TestRunner(tmp_path)
+
+    go_err = (
+        "app_test.go:10:5: undefined: fmt.Println\n"
+        "--- FAIL: TestCalc (0.01s)\n"
+        "    app_test.go:18: expected 5, got 10\n"
+    )
+    diags = runner._parse_go_output(go_err)
+    assert len(diags) == 2
+    assert diags[0].code == "CDM-VRF-002"
+    assert diags[0].file == "app_test.go"
+    assert diags[0].line == 10
+    assert diags[1].code == "CDM-VRF-001"
+    assert diags[1].line == 18
+    assert "TestCalc" in diags[1].message
+
+
+def test_parse_cpp_output(tmp_path):
+    """TestRunner parses C/C++ compiler and CTest failures."""
+    runner = TestRunner(tmp_path)
+
+    cpp_err = (
+        "/src/main.cpp:25:5: error: 'vector' was not declared in this scope\n"
+        "The following tests FAILED:\n"
+        "  1 - MathTests (Failed)\n"
+    )
+    diags = runner._parse_cpp_output(cpp_err)
+    assert len(diags) == 2
+    assert diags[0].code == "CDM-VRF-002"
+    assert diags[0].line == 25
+    assert diags[1].code == "CDM-VRF-001"
+    assert diags[1].file == "CMakeLists.txt"
+    assert "MathTests" in diags[1].message
+
+
+def test_mechanical_repair_polyglot(tmp_path):
+    """Mechanical repair fixes missing imports for Rust, Go, and C++ files."""
+    repairer = MechanicalRepair(tmp_path)
+
+    # 1. Rust repair
+    rs_file = tmp_path / "lib.rs"
+    rs_file.write_text("fn test() { let m = HashMap::new(); }\n", encoding="utf-8")
+    rs_diag = VerifyDiagnostic(
+        code="E0425",
+        file="lib.rs",
+        line=1,
+        column=1,
+        message="cannot find type `HashMap` in this scope",
+        remediation="import HashMap",
+    )
+
+    # 2. Go repair
+    go_file = tmp_path / "main.go"
+    go_file.write_text("package main\n\nfunc Run() { fmt.Println(1) }\n", encoding="utf-8")
+    go_diag = VerifyDiagnostic(
+        code="CDM-VRF-002",
+        file="main.go",
+        line=3,
+        column=1,
+        message="undefined: fmt.Println",
+        remediation="import fmt",
+    )
+
+    # 3. C++ repair
+    cpp_file = tmp_path / "app.cpp"
+    cpp_file.write_text("int main() { std::vector<int> v; return 0; }\n", encoding="utf-8")
+    cpp_diag = VerifyDiagnostic(
+        code="CDM-VRF-002",
+        file="app.cpp",
+        line=1,
+        column=1,
+        message="'vector' was not declared in this scope",
+        remediation="include <vector>",
+    )
+
+    applied, snapshots = repairer.plan_and_apply([rs_diag, go_diag, cpp_diag])
+    assert applied is True
+    assert len(snapshots) == 3
+
+    assert "use std::collections::HashMap;\n" in rs_file.read_text(encoding="utf-8")
+    assert 'import "fmt"\n' in go_file.read_text(encoding="utf-8")
+    assert "#include <vector>\n" in cpp_file.read_text(encoding="utf-8")
+
+    # Test rollback guarantee
+    repairer.rollback(snapshots)
+    assert "HashMap;\n" not in rs_file.read_text(encoding="utf-8")
+    assert 'import "fmt"' not in go_file.read_text(encoding="utf-8")
+    assert "#include <vector>" not in cpp_file.read_text(encoding="utf-8")

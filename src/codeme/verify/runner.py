@@ -152,6 +152,12 @@ class TestRunner:
             diagnostics.extend(self._parse_node_output(combined))
         elif project.ecosystem == "swift":
             diagnostics.extend(self._parse_swift_output(combined))
+        elif project.ecosystem == "rust":
+            diagnostics.extend(self._parse_rust_output(combined))
+        elif project.ecosystem == "go":
+            diagnostics.extend(self._parse_go_output(combined))
+        elif project.ecosystem == "cpp":
+            diagnostics.extend(self._parse_cpp_output(combined))
 
         return diagnostics
 
@@ -313,6 +319,154 @@ class TestRunner:
                     column=1,
                     message=msg,
                     remediation="Check Swift test assertion or compile error.",
+                )
+            )
+
+        return diagnostics
+
+    def _parse_rust_output(self, output: str) -> List[VerifyDiagnostic]:
+        diagnostics: List[VerifyDiagnostic] = []
+
+        # 1. Compiler error: error[E0425]: cannot find value ... \n  --> file.rs:line:col
+        for match in re.finditer(
+            r"error(?:\[([A-Z0-9]+)\])?:\s*([^\n]+)\n\s*-->\s*([^:\s]+\.rs):(\d+):(\d+)",
+            output,
+        ):
+            err_code = match.group(1) or "CDM-VRF-002"
+            msg = match.group(2).strip()
+            fpath = match.group(3)
+            line = int(match.group(4))
+            col = int(match.group(5))
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code=err_code,
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=col,
+                    message=msg,
+                    remediation=f"Resolve rustc error [{err_code}]: {msg}",
+                    rule_id=f"rustc::{err_code}" if err_code != "CDM-VRF-002" else None,
+                )
+            )
+
+        # 2. Test assertion panic: thread 'test_foo' panicked at tests/test_main.rs:8:5: assertion `left == right` failed
+        for match in re.finditer(
+            r"thread '([^']+)' panicked at ([^:\s]+\.rs):(\d+):(\d+):\s*([^\n]+)",
+            output,
+        ):
+            test_name = match.group(1)
+            fpath = match.group(2)
+            line = int(match.group(3))
+            col = int(match.group(4))
+            msg = match.group(5).strip()
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-001",
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=col,
+                    message=f"Test '{test_name}' failed: {msg}",
+                    remediation="Adjust test assertion or update implementation logic.",
+                )
+            )
+
+        return diagnostics
+
+    def _parse_go_output(self, output: str) -> List[VerifyDiagnostic]:
+        diagnostics: List[VerifyDiagnostic] = []
+
+        # 1. Compilation/vet error: file.go:line:col: message
+        for match in re.finditer(r"(?:^|\n)(?:\.\/)?([^:\s\n]+\.go):(\d+):(\d+):\s*([^\n]+)", output):
+            fpath = match.group(1)
+            line = int(match.group(2))
+            col = int(match.group(3))
+            msg = match.group(4).strip()
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-002",
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=col,
+                    message=msg,
+                    remediation=f"Resolve Go compiler or vet diagnostic: {msg}",
+                )
+            )
+
+        # 2. Go test failure: --- FAIL: TestName (0.00s)\n    file.go:line: msg
+        for match in re.finditer(
+            r"---\s+FAIL:\s+([^\s]+)\s+\([^\)]+\)\s*\n\s+(?:\.\/)?([^:\s\n]+\.go):(\d+):\s*([^\n]+)",
+            output,
+        ):
+            test_name = match.group(1)
+            fpath = match.group(2)
+            line = int(match.group(3))
+            msg = match.group(4).strip()
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-001",
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=1,
+                    message=f"Test '{test_name}' failed: {msg}",
+                    remediation="Update Go test expectation or implementation.",
+                )
+            )
+
+        return diagnostics
+
+    def _parse_cpp_output(self, output: str) -> List[VerifyDiagnostic]:
+        diagnostics: List[VerifyDiagnostic] = []
+
+        # 1. Compiler error: file.cpp:line:col: error: message
+        for match in re.finditer(
+            r"(?:^|\n)([^:\s\n]+\.(?:cpp|cc|cxx|c\+\+|h|hpp|c)):(\d+):(\d+):\s*(?:fatal )?error:\s*([^\n]+)",
+            output,
+        ):
+            fpath = match.group(1)
+            line = int(match.group(2))
+            col = int(match.group(3))
+            msg = match.group(4).strip()
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-002",
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=col,
+                    message=msg,
+                    remediation=f"Resolve C/C++ compiler error: {msg}",
+                )
+            )
+
+        # 2. GoogleTest / Catch2 failure: file.cpp:line: Failure\nmessage
+        for match in re.finditer(
+            r"(?:^|\n)([^:\s\n]+\.(?:cpp|cc|cxx|c)):(\d+):\s*Failure\s*\n\s*([^\n]+)",
+            output,
+        ):
+            fpath = match.group(1)
+            line = int(match.group(2))
+            msg = match.group(3).strip()
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-001",
+                    file=self._rel_path(fpath),
+                    line=line,
+                    column=1,
+                    message=f"Assertion failed: {msg}",
+                    remediation="Resolve C/C++ test assertion failure.",
+                )
+            )
+
+        # 3. CTest failure summary: The following tests FAILED: \n 1 - TestName (Failed)
+        for match in re.finditer(r"\s*\d+\s*-\s*([^\s]+)\s*\(Failed\)", output):
+            test_name = match.group(1)
+            diagnostics.append(
+                VerifyDiagnostic(
+                    code="CDM-VRF-001",
+                    file="CMakeLists.txt",
+                    line=1,
+                    column=1,
+                    message=f"CTest suite failure: {test_name}",
+                    remediation="Inspect test log under Testing/Temporary/LastTest.log.",
                 )
             )
 

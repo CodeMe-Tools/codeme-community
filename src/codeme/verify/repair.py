@@ -20,6 +20,38 @@ KNOWN_SYMBOL_IMPORTS = {
     "patch": "from unittest.mock import patch\n",
 }
 
+KNOWN_RUST_IMPORTS = {
+    "HashMap": "use std::collections::HashMap;\n",
+    "HashSet": "use std::collections::HashSet;\n",
+    "BTreeMap": "use std::collections::BTreeMap;\n",
+    "Duration": "use std::time::Duration;\n",
+    "Path": "use std::path::Path;\n",
+    "PathBuf": "use std::path::PathBuf;\n",
+}
+
+KNOWN_GO_PACKAGES = {
+    "fmt": 'import "fmt"\n',
+    "strings": 'import "strings"\n',
+    "time": 'import "time"\n',
+    "os": 'import "os"\n',
+    "bytes": 'import "bytes"\n',
+    "errors": 'import "errors"\n',
+    "sync": 'import "sync"\n',
+}
+
+KNOWN_CPP_INCLUDES = {
+    "vector": "#include <vector>\n",
+    "string": "#include <string>\n",
+    "iostream": "#include <iostream>\n",
+    "cout": "#include <iostream>\n",
+    "endl": "#include <iostream>\n",
+    "map": "#include <map>\n",
+    "set": "#include <set>\n",
+    "memory": "#include <memory>\n",
+    "unique_ptr": "#include <memory>\n",
+    "shared_ptr": "#include <memory>\n",
+}
+
 
 class MechanicalRepair:
     """Applies deterministic, minimal mechanical repairs to source and config files."""
@@ -78,6 +110,61 @@ class MechanicalRepair:
                     if fixed != snapshots[pkg_path]:
                         pkg_path.write_text(fixed, encoding="utf-8")
                         applied_any = True
+
+            # 4. Rust: missing standard import
+            if diag.file.endswith(".rs"):
+                rust_match = re.search(r"cannot find (?:value|type) ['`\"]([^'`\"]+)['`\"] in this scope", diag.message)
+                if rust_match:
+                    symbol = rust_match.group(1)
+                    if symbol in KNOWN_RUST_IMPORTS:
+                        file_path = self._resolve_file(diag.file)
+                        if file_path and file_path.is_file():
+                            if file_path not in snapshots:
+                                snapshots[file_path] = file_path.read_text(encoding="utf-8")
+                            stmt = KNOWN_RUST_IMPORTS[symbol]
+                            content = snapshots[file_path]
+                            if stmt.strip() not in content:
+                                file_path.write_text(stmt + content, encoding="utf-8")
+                                applied_any = True
+
+            # 5. Go: missing standard package import
+            if diag.file.endswith(".go"):
+                go_match = re.search(r"undefined:\s*(?:([a-zA-Z0-9]+)\.)?([a-zA-Z0-9]+)", diag.message)
+                if go_match:
+                    pkg_candidate = go_match.group(1) or go_match.group(2)
+                    if pkg_candidate in KNOWN_GO_PACKAGES:
+                        file_path = self._resolve_file(diag.file)
+                        if file_path and file_path.is_file():
+                            if file_path not in snapshots:
+                                snapshots[file_path] = file_path.read_text(encoding="utf-8")
+                            stmt = KNOWN_GO_PACKAGES[pkg_candidate]
+                            content = snapshots[file_path]
+                            if stmt.strip() not in content:
+                                lines = content.splitlines(keepends=True)
+                                pkg_line_idx = 0
+                                for idx, l in enumerate(lines):
+                                    if l.startswith("package "):
+                                        pkg_line_idx = idx + 1
+                                        break
+                                lines.insert(pkg_line_idx, "\n" + stmt)
+                                file_path.write_text("".join(lines), encoding="utf-8")
+                                applied_any = True
+
+            # 6. C/C++: missing standard header include
+            if any(diag.file.endswith(ext) for ext in (".cpp", ".cc", ".cxx", ".hpp", ".h", ".c")):
+                cpp_match = re.search(r"['`](?:std::)?([a-zA-Z0-9_]+)['`]\s*(?:was not declared|is not a member|does not name a type)", diag.message)
+                if cpp_match:
+                    sym = cpp_match.group(1)
+                    if sym in KNOWN_CPP_INCLUDES:
+                        file_path = self._resolve_file(diag.file)
+                        if file_path and file_path.is_file():
+                            if file_path not in snapshots:
+                                snapshots[file_path] = file_path.read_text(encoding="utf-8")
+                            include_stmt = KNOWN_CPP_INCLUDES[sym]
+                            content = snapshots[file_path]
+                            if include_stmt.strip() not in content:
+                                file_path.write_text(include_stmt + content, encoding="utf-8")
+                                applied_any = True
 
         return applied_any, snapshots
 
