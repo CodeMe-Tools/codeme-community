@@ -68,6 +68,9 @@ def find_unused_imports(source: str, file_path: str = "<unknown>") -> List[Tuple
                     module=None,
                 ))
         elif isinstance(node, ast.ImportFrom):
+            if node.module == "__future__":
+                # Compiler directives like `from __future__ import annotations` are never referenced as runtime names
+                continue
             if node.names and node.names[0].name == "*":
                 # Wildcard import cannot be reliably tracked
                 continue

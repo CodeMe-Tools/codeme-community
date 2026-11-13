@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from codeme.syntax.diagnostic import SyntaxDiagnostic, build_snippet
+from codeme.syntax.grammar_installer import GrammarManager
+
+
+class MissingGrammarError(RuntimeError):
+    """Raised when an optional Tree-sitter grammar is not installed and not approved for install."""
 
 
 @dataclass(frozen=True)
@@ -32,9 +37,9 @@ LANGUAGE_CONFIGS: Dict[str, LanguageConfig] = {
         error_code="CDM-SYN-011",
     ),
     "cpp": LanguageConfig(
-        name="C++",
+        name="C / C++",
         grammar_module="tree_sitter_cpp",
-        extensions=(".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"),
+        extensions=(".c", ".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"),
         error_code="CDM-SYN-012",
     ),
     "java": LanguageConfig(
@@ -70,9 +75,10 @@ class TreeSitterParser:
     without requiring any native host compiler toolchains installed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, grammar_manager: Optional[GrammarManager] = None) -> None:
         self._languages: Dict[str, Any] = {}
         self._parsers: Dict[str, Any] = {}
+        self.grammar_manager = grammar_manager or GrammarManager()
 
     def get_supported_extensions(self) -> Set[str]:
         """Returns all file extensions supported by the Tree-sitter parser."""
@@ -90,6 +96,10 @@ class TreeSitterParser:
         config = LANGUAGE_CONFIGS[lang_key]
 
         if lang_key not in self._parsers:
+            available, reason = self.grammar_manager.ensure_available(lang_key)
+            if not available:
+                raise MissingGrammarError(reason or f"Missing grammar for {lang_key}")
+
             from tree_sitter import Language, Parser
 
             mod = importlib.import_module(config.grammar_module)
@@ -121,6 +131,16 @@ class TreeSitterParser:
 
         try:
             parser, config = self._get_parser_and_config(lang_key)
+        except MissingGrammarError as e:
+            return SyntaxDiagnostic(
+                code="CDM-SYN-008",
+                file_path=file_path,
+                line=0,
+                col=0,
+                message=str(e),
+                snippet=None,
+                recommendation=f"Run 'codeme toolchain install {lang_key}' or pass '--auto-install'.",
+            )
         except Exception as e:
             return SyntaxDiagnostic(
                 code="CDM-SYN-007",
@@ -129,7 +149,7 @@ class TreeSitterParser:
                 col=0,
                 message=f"Tree-sitter parser initialization failed for {lang_key}: {e}",
                 snippet=None,
-                recommendation=f"Ensure {config.grammar_module} is installed in Python environment.",
+                recommendation=f"Ensure {LANGUAGE_CONFIGS[lang_key].grammar_module} is installed in Python environment.",
             )
 
         source_bytes = source.encode("utf-8")

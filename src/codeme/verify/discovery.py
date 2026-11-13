@@ -24,37 +24,118 @@ class ProjectDiscovery:
 
     def discover(self, test_pattern: Optional[str] = None) -> Optional[DiscoveredProject]:
         """Discovers the primary test project in the repository."""
-        # 1. Swift
-        swift_proj = self._discover_swift(test_pattern)
-        if swift_proj:
-            return swift_proj
-
-        # 2. Rust (Cargo)
-        rust_proj = self._discover_cargo(test_pattern)
-        if rust_proj:
-            return rust_proj
-
-        # 3. Go (go test)
-        go_proj = self._discover_go(test_pattern)
-        if go_proj:
-            return go_proj
-
-        # 4. C/C++ (CMake / CTest)
-        cmake_proj = self._discover_cmake(test_pattern)
-        if cmake_proj:
-            return cmake_proj
-
-        # 5. Node / TypeScript
-        node_proj = self._discover_node(test_pattern)
-        if node_proj:
-            return node_proj
-
-        # 6. Python
-        python_proj = self._discover_python(test_pattern)
-        if python_proj:
-            return python_proj
-
+        discoverers = (
+            self._discover_swift,
+            self._discover_cargo,
+            self._discover_go,
+            self._discover_cmake,
+            self._discover_jvm,
+            self._discover_dotnet,
+            self._discover_ruby,
+            self._discover_php,
+            self._discover_node,
+            self._discover_python,
+        )
+        for discover_fn in discoverers:
+            proj = discover_fn(test_pattern)
+            if proj:
+                return proj
         return None
+
+    def _discover_jvm(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers Java/Kotlin projects via Maven (pom.xml) or Gradle."""
+        if (self.repo_dir / "pom.xml").is_file():
+            cmd = ["mvn", "test", "-q"]
+            if test_pattern:
+                cmd.append(f"-Dtest={test_pattern}")
+            test_files = list(self.repo_dir.glob("src/test/**/*.java")) + list(self.repo_dir.glob("src/test/**/*.kt"))
+            return DiscoveredProject(
+                ecosystem="jvm",
+                framework="maven",
+                command=cmd,
+                root_dir=self.repo_dir,
+                test_files=test_files,
+            )
+
+        if (self.repo_dir / "build.gradle").is_file() or (self.repo_dir / "build.gradle.kts").is_file():
+            gradlew = self.repo_dir / "gradlew"
+            gradle_bin = str(gradlew) if gradlew.is_file() else "gradle"
+            cmd = [gradle_bin, "test"]
+            if test_pattern:
+                cmd.extend(["--tests", test_pattern])
+            test_files = list(self.repo_dir.glob("src/test/**/*.java")) + list(self.repo_dir.glob("src/test/**/*.kt"))
+            return DiscoveredProject(
+                ecosystem="jvm",
+                framework="gradle",
+                command=cmd,
+                root_dir=self.repo_dir,
+                test_files=test_files,
+            )
+        return None
+
+    def _discover_dotnet(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers C# / .NET projects via *.sln or *.csproj."""
+        has_sln = any(self.repo_dir.glob("*.sln"))
+        has_csproj = any(self.repo_dir.glob("*.csproj"))
+        if not (has_sln or has_csproj):
+            return None
+
+        cmd = ["dotnet", "test"]
+        if test_pattern:
+            cmd.extend(["--filter", test_pattern])
+        test_files = list(self.repo_dir.glob("**/*Tests.cs")) + list(self.repo_dir.glob("**/*Test.cs"))
+        return DiscoveredProject(
+            ecosystem="dotnet",
+            framework="dotnet",
+            command=cmd,
+            root_dir=self.repo_dir,
+            test_files=test_files,
+        )
+
+    def _discover_ruby(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers Ruby projects via RSpec or Rake."""
+        if (self.repo_dir / "spec").is_dir() or (self.repo_dir / ".rspec").is_file():
+            cmd = ["bundle", "exec", "rspec"] if (self.repo_dir / "Gemfile").is_file() else ["rspec"]
+            if test_pattern:
+                cmd.extend(["-e", test_pattern])
+            test_files = list(self.repo_dir.glob("spec/**/*_spec.rb"))
+            return DiscoveredProject(
+                ecosystem="ruby",
+                framework="rspec",
+                command=cmd,
+                root_dir=self.repo_dir,
+                test_files=test_files,
+            )
+        if (self.repo_dir / "Rakefile").is_file() and (self.repo_dir / "test").is_dir():
+            cmd = ["bundle", "exec", "rake", "test"] if (self.repo_dir / "Gemfile").is_file() else ["rake", "test"]
+            test_files = list(self.repo_dir.glob("test/**/*_test.rb"))
+            return DiscoveredProject(
+                ecosystem="ruby",
+                framework="rake",
+                command=cmd,
+                root_dir=self.repo_dir,
+                test_files=test_files,
+            )
+        return None
+
+    def _discover_php(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
+        """Discovers PHP projects via phpunit.xml or composer.json."""
+        has_phpunit = (self.repo_dir / "phpunit.xml").is_file() or (self.repo_dir / "phpunit.xml.dist").is_file()
+        if not has_phpunit:
+            return None
+
+        vendor_phpunit = self.repo_dir / "vendor" / "bin" / "phpunit"
+        cmd = [str(vendor_phpunit) if vendor_phpunit.is_file() else "phpunit"]
+        if test_pattern:
+            cmd.extend(["--filter", test_pattern])
+        test_files = list(self.repo_dir.glob("tests/**/*Test.php"))
+        return DiscoveredProject(
+            ecosystem="php",
+            framework="phpunit",
+            command=cmd,
+            root_dir=self.repo_dir,
+            test_files=test_files,
+        )
 
     def _discover_cargo(self, test_pattern: Optional[str]) -> Optional[DiscoveredProject]:
         """Discovers Rust project via Cargo.toml."""

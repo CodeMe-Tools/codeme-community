@@ -57,6 +57,34 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def _record_verify_audit(
+    repo_dir: Path,
+    exit_code: int,
+    duration_ms: float,
+    raw_bytes: int,
+    returned_bytes: int,
+    diagnostics_count: int,
+) -> None:
+    """Persist token savings and run telemetry to .codeme/logs/ if audit core is available."""
+    try:
+        from codeme.core.audit import AuditLog, AuditLogger, TokenMetrics, generate_run_id
+        log_dir = repo_dir / ".codeme" / "logs"
+        logger = AuditLogger(log_dir=log_dir)
+        metrics = TokenMetrics.calculate(raw_output_bytes=raw_bytes, returned_bytes=returned_bytes)
+        entry = AuditLog(
+            run_id=generate_run_id(),
+            tool_or_command="codeme-verify",
+            exit_code=exit_code,
+            duration_ms=duration_ms,
+            metrics=metrics,
+            diagnostics_count=diagnostics_count,
+        )
+        logger.record_run(entry)
+    except Exception:
+        # Telemetry must never break verification or silent-success contract
+        pass
+
+
 def run_verification(args) -> int:
     repo_dir = Path(args.repo).resolve()
     if not repo_dir.exists():
@@ -104,43 +132,50 @@ def run_verification(args) -> int:
                 stderr = reval_stderr
 
     duration_ms = (time.time() - start_time) * 1000.0
+    raw_bytes = len((stdout + stderr).encode("utf-8"))
 
     if success:
+        returned_bytes = 0
         if args.format == "json":
-            print(
-                format_diagnostics_json(
-                    str(uuid.uuid4()),
-                    "success",
-                    0,
-                    [],
-                    duration_ms=duration_ms,
-                    raw_output_bytes=len((stdout + stderr).encode("utf-8")),
-                    suppressed_bytes=len((stdout + stderr).encode("utf-8")),
-                )
+            payload = format_diagnostics_json(
+                str(uuid.uuid4()),
+                "success",
+                0,
+                [],
+                duration_ms=duration_ms,
+                raw_output_bytes=raw_bytes,
+                suppressed_bytes=raw_bytes,
             )
+            returned_bytes = len(payload.encode("utf-8"))
+            print(payload)
         elif args.verbose:
+            msg = "Test verification succeeded.\n" + (stdout or "")
+            returned_bytes = len(msg.encode("utf-8"))
             sys.stdout.write("Test verification succeeded.\n")
             if stdout:
                 sys.stdout.write(stdout)
+        _record_verify_audit(repo_dir, 0, duration_ms, raw_bytes, returned_bytes, 0)
         # ADR-0002: Default success is SILENT (0 bytes stdout/stderr)
         return 0
 
     # Failure
     exit_code = 1
-    raw_bytes = len((stdout + stderr).encode("utf-8"))
+    returned_bytes = 0
     if args.format == "json":
-        print(
-            format_diagnostics_json(
-                str(uuid.uuid4()),
-                "violation",
-                exit_code,
-                diagnostics,
-                duration_ms=duration_ms,
-                raw_output_bytes=raw_bytes,
-                suppressed_bytes=max(0, raw_bytes - 100),
-            )
+        payload = format_diagnostics_json(
+            str(uuid.uuid4()),
+            "violation",
+            exit_code,
+            diagnostics,
+            duration_ms=duration_ms,
+            raw_output_bytes=raw_bytes,
+            suppressed_bytes=max(0, raw_bytes - 100),
         )
+        returned_bytes = len(payload.encode("utf-8"))
+        print(payload)
     else:
+        diag_text = "".join(d.format_text() + "\n" for d in diagnostics)
+        returned_bytes = len(diag_text.encode("utf-8"))
         for d in diagnostics:
             sys.stderr.write(d.format_text() + "\n")
         if args.verbose and (stdout or stderr):
@@ -150,6 +185,7 @@ def run_verification(args) -> int:
             if stderr:
                 sys.stderr.write(stderr + "\n")
 
+    _record_verify_audit(repo_dir, exit_code, duration_ms, raw_bytes, returned_bytes, len(diagnostics))
     return exit_code
 
 

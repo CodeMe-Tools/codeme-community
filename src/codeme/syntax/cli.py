@@ -29,6 +29,8 @@ def _add_runner_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--repo", "-r", type=str, default=None, help="Repository root path to scan")
     p.add_argument("--file", "-f", type=str, default=None, help="Specific file to verify")
     p.add_argument("--fix", action="store_true", help="Apply deterministic repairs where possible")
+    p.add_argument("--auto-install", action="store_true", help="Automatically install missing optional language grammars")
+    p.add_argument("--no-install", action="store_true", help="Never prompt to install missing optional language grammars")
     p.add_argument("--verbose", "-v", action="store_true", help="Enable verbose diagnostics")
 
 
@@ -36,7 +38,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    runner = SyntaxRunner(fix=args.fix, verbose=args.verbose)
+    runner = SyntaxRunner(
+        fix=args.fix,
+        verbose=args.verbose,
+        auto_install=args.auto_install,
+        no_install=args.no_install,
+    )
     code = runner.run(repo_path=args.repo, file_path=args.file)
     return code
 
